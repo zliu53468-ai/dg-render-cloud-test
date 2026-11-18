@@ -141,3 +141,14 @@ python dg_current_shoe_v6.py --self-test
 目前雲端程式**不會**送到 BGS 或任何第三方端點；保留獨立儲存，優先確認雲端畫面能播放/辨識。
 
 要接進 `bofu58-game-integration` 原本的 `server.mjs`，應由你提供真實原始碼後，為它新增**受金鑰保護**的 DG 資料接收路由，並使用你已完成的 DG Render Bridge 接收欄位。不能在沒有確認專案實際 HTTP 路由、資料庫及既有 Render 運作方式之前假設可以直接覆蓋 `server.mjs`。
+
+## 2026-11-18 隔離測試分支：瀏覽器健康診斷與新入口白名單
+
+此變更**尚未部署**。先在 Render Events / Metrics 找出實例重啟原因，再考慮合併 PR；服務重啟與 DG Token 到期是不同問題。
+
+- 在 Render Environment 的 `DG_ALLOWED_HOSTS` 加入已經核實且授權的完整主機名稱：`dg66.net,new-dd-cn.20299999.com,new-dd-cn.ahsy114.com,dggw.vip`。**不要放入整條含 token 的網址。**
+- 人工「當次授權進入連結」只允許 HTTPS、`new-dd-cn.` 前綴、精確登錄於白名單的主機、`/ddnewpc/index.html` 路徑、合法的 token/type/return 參數。非白名單仍會拒絕。
+- 認證後的 `/api/status` 額外顯示 `worker_alive`、`capture_age_seconds`、`capture_stale`、`capture_failures`。**它們診斷截圖進度，不代表 DG 已登入或影片已播放。**
+- 連續三次截圖失敗會暫停 OCR，留下 `capture_failed` 狀態；**不自動重登、不保存/重播帶 token 的授權連結**。
+- 公開的 `/health` 仍然是 HTTP 進程的基本存活檢查；不要把外站中斷當成 Render 的重啟條件。
+- 測試時依序檢查後端 → Chromium → DG 頁面 → 真實牌桌 → OCR。Render 若再次重啟，請對照 Events 的原因與 Metrics 記憶體曲線。
