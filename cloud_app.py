@@ -68,7 +68,7 @@ def valid_start_url():
 
 # Operator-pasted one-time links: this is the observed entry form, not a secret
 # to place in repository files or startup environment variables.
-ENTRY_HOST = 'new-dd-cn.20299999.com'
+ENTRY_HOST_PREFIX = 'new-dd-cn.'
 ENTRY_PATH = '/ddnewpc/index.html'
 
 
@@ -86,8 +86,8 @@ def valid_authorized_entry_url(value, allowed=None):
         p = urlsplit(value)
         allow = ALLOWED_HOSTS if allowed is None else allowed
         host = (p.hostname or '').lower().rstrip('.')
-        if (p.scheme != 'https' or host != ENTRY_HOST or
-                not allowed_host(host, allow) or p.port is not None or
+        if (p.scheme != 'https' or not host.startswith(ENTRY_HOST_PREFIX) or
+                host not in allow or p.port is not None or
                 p.username is not None or p.password is not None or
                 p.path != ENTRY_PATH or not p.query or p.fragment):
             return False
@@ -142,12 +142,23 @@ class CloudOperator:
             'frame_at':None,'preview_at':None,'page_http_error':None,
             'page_host_allowed':False,'page_host':None,'ocr':None,'frames':0,
             'roi_ready':False,'error_code':None,'verified':False,
+            'browser_started_at':None,'capture_failures':0,
         }
         self.status['roi_ready']=all(x in self.rois for x in REQUIRED)
 
     def snapshot(self):
         with self.lock:
-            return {**self.status,'rois':dict(self.rois),'storage_ephemeral_by_default':True}
+            status=dict(self.status)
+            active=bool(self.thread and self.thread.is_alive())
+            stamp=status.get('frame_at')
+            started=status.get('browser_started_at')
+            age=max(0,round(time.time()-stamp,1)) if stamp else None
+            since_start=max(0,time.time()-started) if started else 0
+            stale=(status.get('browser')=='open' and
+                   (age>30 if age is not None else since_start>30))
+            return {**status,'worker_alive':active,'capture_age_seconds':age,
+                    'capture_stale':stale,'rois':dict(self.rois),
+                    'storage_ephemeral_by_default':True}
 
     def preview(self):
         with self.lock:return self.preview_jpeg
@@ -166,7 +177,7 @@ class CloudOperator:
     def _loop(self):
         browser=None;context=None;page=None;ocr=None;playwright=None
         last_frame=0.0;last_preview=0.0;manual_preview=False
-        last_doc_error=None
+        last_doc_error=None;capture_failures=0
         try:
             from playwright.sync_api import sync_playwright
             engine=sync_playwright().start()
@@ -196,7 +207,9 @@ class CloudOperator:
             context=browser.new_context(viewport={'width':VIEWPORT_W,'height':VIEWPORT_H},
                                         device_scale_factor=1,accept_downloads=False)
             page=context.new_page()
-            self._set(browser='open',page='loading',page_http_error=None)
+            self._set(browser='open',page='loading',page_http_error=None,
+                      browser_started_at=time.time(),capture_failures=0,
+                      error_code=None)
             def on_response(resp):
                 nonlocal last_doc_error
                 try:
@@ -228,7 +241,8 @@ class CloudOperator:
                             if browser:browser.close();browser=None
                             page=None
                             self._set(browser='stopped',page='not_loaded',monitoring=False,
-                                      ocr=None,page_host_allowed=False)
+                                      ocr=None,page_host_allowed=False,browser_started_at=None,
+                                      capture_failures=0)
                         elif action=='open_authorized_link':
                             # Browser interaction is requested by a human using
                             # the protected operator UI, not by automatic login.
@@ -327,9 +341,11 @@ class CloudOperator:
                             image=decode_jpeg(raw)
                             now=time.time()
                             last_frame=t
+                            capture_failures=0
                             with self.lock:
                                 self.preview_jpeg=export_preview(raw)
-                            self._set(frame_at=now,preview_at=now,frames=self.status['frames']+1)
+                            self._set(frame_at=now,preview_at=now,
+                                      capture_failures=0,frames=self.status['frames']+1)
                             if last_doc_error is not None and last_doc_error>=400:
                                 if ocr:ocr.close();ocr=None;self._set(monitoring=False)
                                 self._set(page='http_error',error_code='PAGE_HTTP_ERROR')
@@ -340,14 +356,27 @@ class CloudOperator:
                             else:
                                 self._set(page='loaded')
                         except Exception as exc:
-                            self._set(error_code='CAPTURE_'+type(exc).__name__)
+                            capture_failures+=1
+                            self._set(error_code='CAPTURE_'+type(exc).__name__,
+                                      capture_failures=capture_failures)
+                            if capture_failures>=3:
+                                if ocr:
+                                    ocr.close();ocr=None
+                                    self._set(monitoring=False,ocr=None)
+                                self._set(page='capture_failed')
                 # Browser events and control actions must run on same Playwright thread.
                 time.sleep(.08)
+        except Exception as exc:
+            # Never log the URL or exception message (which may contain a token).
+            self._set(browser='error',page='worker_failed',monitoring=False,
+                      error_code='WORKER_'+type(exc).__name__)
         finally:
-            if ocr:ocr.close()
-            if context:context.close()
-            if browser:browser.close()
-            if playwright:playwright.stop()
+            for resource in (ocr,context,browser,playwright):
+                if resource is None:continue
+                try:
+                    if resource is playwright:resource.stop()
+                    else:resource.close()
+                except Exception:pass
 
 SERVICE=CloudOperator()
 
