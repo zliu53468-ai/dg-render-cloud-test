@@ -10,7 +10,7 @@ import numpy as np
 HERE=Path(__file__).resolve().parent.parent
 sys.path.insert(0,str(HERE))
 from cloud_ocr import normalized_roi,crop_viewport,decode_jpeg,CloudOCR
-from cloud_app import allowed_host,valid_start_url,export_preview
+from cloud_app import allowed_host,valid_start_url,valid_authorized_entry_url,export_preview
 import dg_rb02_v6 as dg
 
 
@@ -29,6 +29,25 @@ class Tests(unittest.TestCase):
         self.assertTrue(allowed_host('cdn.dg66.net',{'dg66.net'}))
         self.assertFalse(allowed_host('notdg66.net',{'dg66.net'}))
         self.assertTrue(valid_start_url())
+
+    def test_authorized_session_link_is_one_time_only(self):
+        allowed={'dg66.net', 'new-dd-cn.20299999.com', 'dggw.vip'}
+        fake_token='a' * 32
+        base='https://new-dd-cn.20299999.com/ddnewpc/index.html'
+        link=base+'?token='+fake_token+'&type=5&return=dggw.vip'
+        self.assertTrue(valid_authorized_entry_url(link,allowed))
+        self.assertFalse(valid_authorized_entry_url(link,{'dg66.net'}))
+        for invalid in (
+            base, base+'?token=', base+'?type=5',
+            'http://new-dd-cn.20299999.com/ddnewpc/index.html?token='+fake_token,
+            'https://new-dd-cn.20299999.com:443/ddnewpc/index.html?token='+fake_token,
+            'https://user@new-dd-cn.20299999.com/ddnewpc/index.html?token='+fake_token,
+            base+'?token='+fake_token+'&return=evil.example',
+            base+'?token='+fake_token+'&return=dggw.vip&extra=yes',
+            base+'?token='+fake_token+'#fragment',
+            'https://new-dd-cn.20299999.com.evil.example/ddnewpc/index.html?token='+fake_token,
+        ):
+            self.assertFalse(valid_authorized_entry_url(invalid,allowed), invalid.split('?')[0])
 
     def test_real_samples(self):
         self.assertEqual(dg.parse_header(png('HEADER_HAPPY_RB03.png'))['table'],'RB03')
