@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DG Cloud Visual Operator · V1</title><link rel="stylesheet" href="/static/operator.css"></head>
+<body>
+<header><h1>DG Cloud Visual Operator <small>V1 · 僅讀取畫面</small></h1><p>Render 雲端 Chromium 實驗環境。所有點數均為 OCR 候選，不是官方結算。</p></header>
+<main>
+<section class="panel">
+ <h2>1. 管理金鑰與瀏覽器</h2>
+ <div class="flex"><input id="token" type="password" autocomplete="off" placeholder="輸入 Render DG_CONTROL_TOKEN（不儲存）" aria-label="管理金鑰"><button id="connect">連線狀態</button></div>
+ <div class="flex"><button id="start">啟動雲端 Chromium</button><button id="home">返回已設定的公開入口</button><button id="stop" class="warn">關閉雲端瀏覽器</button><button id="shot">立即擷取</button></div>
+ <p class="hint">只會開啟 Render 環境變數指定的公開入口；不會自動登入、解 CAPTCHA、模擬下注、續期或繞過 404。</p>
+</section>
+<section class="panel"><h2>2. 雲端可見畫面及人工控制</h2>
+ <div class="flex"><select id="mode"><option value="view">畫面預覽</option><option value="click">人工點擊</option><option value="score">框選：閒 VS 莊比分條</option><option value="header">框選：荷官／桌號</option><option value="timer">框選：倒數圓圈</option><option value="road">框選：六排珠盤路</option></select><span id="actionResult"></span></div>
+ <div id="screenWrap"><img id="screen" alt="受保護的遠端網頁畫面預覽" draggable="false"><canvas id="draw"></canvas><div id="empty">先啟動 Chromium，等待畫面出現</div></div>
+ <div class="flex"><input id="textInput" type="password" autocomplete="off" placeholder="輸入目前雲端焦點欄位的內容（不儲存）"><button id="type">在雲端輸入文字</button><select id="key"><option>Tab</option><option>Enter</option><option>Escape</option><option>Backspace</option><option>ArrowDown</option><option>ArrowUp</option><option>Space</option></select><button id="press">按鍵</button></div>
+ <p class="hint">請自行確認網站授權；僅人工操作入口／驗證／進入牌桌。點擊與輸入僅在停止監控時提供，避免誤操作。預覽會遮住右上角常見帳號區；預覽不寫入磁碟。</p>
+</section>
+<section class="panel"><h2>3. 畫面校準與候選監控</h2>
+ <div class="flex"><button id="monitor">開始 V6.4 OCR（四區都需校準）</button><button id="pause" class="warn">停止 OCR</button><button id="refresh">更新資料</button></div>
+ <div id="rois"></div><h3>目前狀態</h3><pre id="status">尚未連接</pre><h3>最近開獎候選</h3><pre id="candidates">尚無候選資料</pre>
+ <p class="hint">開獎候選未經官方核對；正常開牌不能只憑珠盤路數量大幅減少判定洗牌。瀏覽器關閉或 Render 重新部署會中斷會話。</p>
+</section>
+</main><footer>僅供合法授權畫面觀測。不要將管理金鑰、登入資訊或包含個資的畫面貼到聊天中。</footer>
+<script src="/static/operator.js" defer></script></body></html>

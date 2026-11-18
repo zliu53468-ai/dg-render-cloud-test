@@ -1,0 +1,16 @@
+# Independent DG visual observer. Does NOT modify an existing BGS/LINE service.
+FROM mcr.microsoft.com/playwright/python:v1.64.1-noble
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-eng \
+  && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY requirements-cloud.txt ./
+RUN pip install --no-cache-dir -r requirements-cloud.txt
+COPY cloud_app.py cloud_ocr.py dg_current_shoe_v6.py dg_rb02_v6.py score_engine_v3.py ./
+COPY static/ ./static/
+COPY samples/ ./samples/
+RUN mkdir -p /tmp/dg-cloud-observer && chown -R pwuser:pwuser /app /tmp/dg-cloud-observer
+USER pwuser
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 DG_STORAGE_DIR=/tmp/dg-cloud-observer
+EXPOSE 10000
+CMD ["python","-u","cloud_app.py"]

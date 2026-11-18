@@ -1,0 +1,21 @@
+# EXAMPLE only. Do not overwrite the existing render.yaml or BGS service.
+# Creating a separate service on Render can produce extra compute charges.
+services:
+  - type: web
+    name: dg-cloud-visual-pilot
+    runtime: docker
+    dockerfilePath: ./DG_Render_Cloud_Chromium_V1/Dockerfile.dg-cloud
+    dockerContext: ./DG_Render_Cloud_Chromium_V1
+    plan: starter
+    healthCheckPath: /health
+    envVars:
+      - key: DG_CONTROL_TOKEN
+        sync: false
+      - key: DG_START_URL
+        value: https://dg66.net/Opengame/freegame/
+      - key: DG_ALLOWED_HOSTS
+        value: dg66.net
+      - key: DG_FRAME_INTERVAL_SECONDS
+        value: '1.25'
+      - key: DG_PREVIEW_INTERVAL_SECONDS
+        value: '2'
