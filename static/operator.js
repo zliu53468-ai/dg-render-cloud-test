@@ -29,6 +29,7 @@ canvas.addEventListener('pointerup',async e=>{
 $('#mode').addEventListener('change',e=>mode=e.target.value);
 $('#connect').addEventListener('click',()=>{token=$('#token').value;$('#token').value='';refresh()});
 for(const [id,action] of [['start','start_browser'],['home','go_home'],['stop','stop_browser'],['shot','capture_once'],['monitor','start_monitor'],['pause','stop_monitor']]){$('#'+id).addEventListener('click',()=>command(action))}
+$('#entry').addEventListener('click',()=>{const e=$('#entryUrl'),url=e.value.trim();e.value='';if(!url)return show('請先貼上當次授權連結');command('open_authorized_link',{url})});
 $('#type').addEventListener('click',()=>{const v=$('#textInput').value;$('#textInput').value='';command('type_text',{text:v})});
 $('#press').addEventListener('click',()=>command('press_key',{key:$('#key').value}));
 $('#refresh').addEventListener('click',refresh);
