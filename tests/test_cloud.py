@@ -36,6 +36,11 @@ class Tests(unittest.TestCase):
         base='https://new-dd-cn.20299999.com/ddnewpc/index.html'
         link=base+'?token='+fake_token+'&type=5&return=dggw.vip'
         self.assertTrue(valid_authorized_entry_url(link,allowed))
+        new_host='new-dd-cn.ahsy114.com'
+        new_link=link.replace('new-dd-cn.20299999.com',new_host)
+        self.assertTrue(valid_authorized_entry_url(new_link,allowed|{new_host}))
+        self.assertFalse(valid_authorized_entry_url(new_link,allowed))
+        self.assertFalse(valid_authorized_entry_url(new_link.replace(new_host,'evil.example'),allowed|{'evil.example'}))
         self.assertFalse(valid_authorized_entry_url(link,{'dg66.net'}))
         for invalid in (
             base, base+'?token=', base+'?type=5',
