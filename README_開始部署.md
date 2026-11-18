@@ -84,6 +84,19 @@
 
 此版本只允許到 `DG_START_URL` 指定的 HTTPS 公開起始頁，不接受帶查詢字串或已簽名 session URL 作為啟動值。
 
+## 新增：使用實際授權網站的一次性連結，不走試玩入口
+
+你提供的正式入口具有登入 token，屬於短期會話憑證。**不要將整條帶 token 的連結寫進 GitHub、Render Environment、README 或公開聊天。**
+
+1. 在 Render → `dg-cloud-operator` → Environment 中，將 `DG_ALLOWED_HOSTS` 設為 `dg66.net,new-dd-cn.20299999.com,dggw.vip`。保留原本的 `DG_CONTROL_TOKEN`，不需要將帶 token 的連結設為 `DG_START_URL`。
+2. 使用測試分支部署後，開啟 `/operator`，輸入 `DG_CONTROL_TOKEN` 並點「連線狀態」。
+3. 由本人依網站正常授權流程**重新取得有效、未公開**的當次連結，貼到「當次授權進入連結」欄位，點「以當次授權連結開啟」。該按鈕會自行啟動 Chromium 或導向現有頁面，無須先開試玩入口。
+4. 只允許 HTTPS `new-dd-cn.20299999.com/ddnewpc/index.html`，且 `return` 的主機必須在白名單。若後續跳往其他合法授權主機，先核實，再將其**主機名稱**加入白名單。
+5. 貼入的連結不會被存到狀態檔、CSV、日誌、GitHub 或 Render 環境變數；會話仍存在當次雲端 Chromium 記憶體中直至結束。**不能保證站方允許跨裝置或跨地區使用，也不會自動延長登入、繞過驗證碼或防護。**
+6. 若當前登入 token 曾公開貼出，應由網站正常流程撤銷或換發新連結，勿繼續使用舊 token。
+
+更新只存在 `dg-authorized-session-entry-20261118` 測試分支。**沒有合併 main，也沒有重新部署 Render。**
+
 ## 第四步：部署後本機操作
 
 1. Render 部署成功，瀏覽 `https://你的服務.onrender.com/health`，應回 `{"ok":true,...}`。
