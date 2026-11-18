@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, parse_qs
 from queue import Queue, Empty, Full
 import hmac
 import json
@@ -36,7 +36,7 @@ VIEWPORT_H=max(480,min(1080,int(os.getenv('DG_VIEWPORT_HEIGHT','900'))))
 FRAME_INTERVAL=max(.65,min(8.,float(os.getenv('DG_FRAME_INTERVAL_SECONDS','1.25'))))
 PREVIEW_INTERVAL=max(.8,min(8.,float(os.getenv('DG_PREVIEW_INTERVAL_SECONDS','2'))))
 AUTHORIZED_ACTIONS={'start_browser','stop_browser','go_home','click','type_text','press_key',
-                    'start_monitor','stop_monitor','set_roi','capture_once'}
+                    'start_monitor','stop_monitor','set_roi','capture_once','open_authorized_link'}
 ALLOWED_KEYS={'Tab','Enter','Escape','Backspace','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'}
 
 
@@ -63,6 +63,52 @@ def valid_start_url():
     return (p.scheme=='https' and p.hostname and allowed_host(p.hostname,ALLOWED_HOSTS)
             and not p.username and not p.password and p.port is None
             and not p.query and not p.fragment)
+
+
+
+# Operator-pasted one-time links: this is the observed entry form, not a secret
+# to place in repository files or startup environment variables.
+ENTRY_HOST = 'new-dd-cn.20299999.com'
+ENTRY_PATH = '/ddnewpc/index.html'
+
+
+def valid_authorized_entry_url(value, allowed=None):
+    """Accept only an explicitly operator-supplied HTTPS game-entry URL.
+
+    Accept the short-lived credential solely in an authenticated POST body.
+    Never put it in status, errors, application logs, env or persistent files.
+    """
+    if not isinstance(value, str) or not (1 <= len(value) <= 2048):
+        return False
+    if any(ord(ch) <= 32 or ord(ch) == 127 for ch in value):
+        return False
+    try:
+        p = urlsplit(value)
+        allow = ALLOWED_HOSTS if allowed is None else allowed
+        host = (p.hostname or '').lower().rstrip('.')
+        if (p.scheme != 'https' or host != ENTRY_HOST or
+                not allowed_host(host, allow) or p.port is not None or
+                p.username is not None or p.password is not None or
+                p.path != ENTRY_PATH or not p.query or p.fragment):
+            return False
+        q = parse_qs(p.query, keep_blank_values=True, strict_parsing=True,
+                     max_num_fields=6)
+        if not q or not set(q).issubset({'token', 'type', 'return'}):
+            return False
+        tok = q.get('token', [])
+        if len(tok) != 1 or not re.fullmatch(r'[A-Za-z0-9._~-]{16,256}', tok[0]):
+            return False
+        types = q.get('type', [])
+        if types and (len(types) != 1 or not re.fullmatch(r'[0-9]{1,3}', types[0])):
+            return False
+        returns = q.get('return', [])
+        if returns and (len(returns) != 1 or
+                        not re.fullmatch(r'[a-zA-Z0-9.-]{4,128}', returns[0]) or
+                        not allowed_host(returns[0], allow)):
+            return False
+        return True
+    except (ValueError, TypeError, UnicodeError):
+        return False
 
 
 def load_rois():
@@ -136,10 +182,16 @@ class CloudOperator:
                 if pages:page=pages[-1]
             return page
 
-        def browser_ready():
+        def browser_ready(initial_url=None):
             nonlocal browser,context,page,last_doc_error
             if browser is not None:return
-            if not valid_start_url():raise ValueError('START_URL_REJECTED')
+            if initial_url is None:
+                if not valid_start_url():raise ValueError('START_URL_REJECTED')
+                target = START_URL
+            else:
+                if not valid_authorized_entry_url(initial_url):
+                    raise ValueError('ENTRY_URL_REJECTED')
+                target = initial_url
             browser=engine.chromium.launch(headless=True,args=['--disable-dev-shm-usage'])
             context=browser.new_context(viewport={'width':VIEWPORT_W,'height':VIEWPORT_H},
                                         device_scale_factor=1,accept_downloads=False)
@@ -155,7 +207,7 @@ class CloudOperator:
                 p.on('response',on_response)
             context.on('page',on_new_page)
             page.on('response',on_response)
-            try:page.goto(START_URL,wait_until='domcontentloaded',timeout=20000)
+            try:page.goto(target,wait_until='domcontentloaded',timeout=20000)
             except Exception:
                 self._set(page='navigation_failed',error_code='PAGE_NAVIGATION_FAILED')
             else:self._set(page='loaded')
@@ -177,6 +229,25 @@ class CloudOperator:
                             page=None
                             self._set(browser='stopped',page='not_loaded',monitoring=False,
                                       ocr=None,page_host_allowed=False)
+                        elif action=='open_authorized_link':
+                            # Browser interaction is requested by a human using
+                            # the protected operator UI, not by automatic login.
+                            entry_url = params.get('url')
+                            try:
+                                if not valid_authorized_entry_url(entry_url):
+                                    raise ValueError('ENTRY_URL_REJECTED')
+                                if ocr:
+                                    ocr.close();ocr=None;self._set(monitoring=False)
+                                last_doc_error=None
+                                if browser:
+                                    current_page().goto(entry_url,wait_until='domcontentloaded',timeout=20000)
+                                    self._set(page='loaded')
+                                else:
+                                    browser_ready(initial_url=entry_url)
+                            finally:
+                                # Do not retain the bearer URL in the command queue.
+                                params['url']=''
+                                entry_url=None
                         elif action=='go_home':
                             if ocr:ocr.close();ocr=None;self._set(monitoring=False)
                             if not browser: raise RuntimeError('BROWSER_NOT_STARTED')
@@ -346,6 +417,8 @@ class Handler(BaseHTTPRequestHandler):
             if action not in AUTHORIZED_ACTIONS:raise ValueError('ACTION_UNKNOWN')
             args=obj.get('data') or {}
             if not isinstance(args,dict):raise ValueError('ARGS_INVALID')
+            if action=='open_authorized_link' and not valid_authorized_entry_url(args.get('url')):
+                raise ValueError('ENTRY_URL_REJECTED')
         except (ValueError,TypeError,UnicodeDecodeError):
             return self.reply(400,{'error':'INVALID_REQUEST'})
         if not SERVICE.submit(action,args):return self.reply(409,{'error':'QUEUE_FULL'})
